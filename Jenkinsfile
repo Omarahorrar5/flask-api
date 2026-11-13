@@ -9,6 +9,7 @@ pipeline {
     }
 
     environment {
+        DOCKERHUB_USER = 'omarahorrar'
         IMAGE_NAME = 'omarahorrar/flask-api'
     }
 
@@ -50,6 +51,36 @@ pipeline {
                     ).trim()
                 }
                 sh 'docker build -t $IMAGE_NAME:$IMAGE_TAG .'
+            }
+        }
+
+        stage('Trivy scan') {
+            steps {
+                sh '''
+                    docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v trivy-cache:/root/.cache/ \
+                    aquasec/trivy:latest image \
+                    --severity HIGH,CRITICAL \
+                    --ignore-unfixed \
+                    --exit-code 1 \
+                    --no-progress \
+                    $IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
+
+        stage('Push image') {
+            steps{
+                withCredentials([string(credentialsId: 'dockerhub-token', varibale: 'DH_TOKEN')]) {
+                    sh '''
+                        echo "$DH_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
+                        docker push $IMAGE_NAME:$IMAGE_TAG
+                    '''
+                }
+            }
+            post {
+                always { sh 'docker logout' }
             }
         }
     }
